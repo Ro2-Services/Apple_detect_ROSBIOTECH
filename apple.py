@@ -48,7 +48,7 @@ while True:
                     (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (36, 255, 12), 2)
 
     # Afficher le résultat
-    cv2.imshow("Détection de pommes (Roboflow)", frame)
+    cv2.imshow("Detection apple (Roboflow)", frame)
 
     # Quitter avec 'q'
     if cv2.waitKey(1) & 0xFF == ord('q'):

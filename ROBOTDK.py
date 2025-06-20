@@ -1,56 +1,69 @@
 import cv2
-import requests
-import numpy as np
+from ultralytics import YOLO
 
-# Configuration Roboflow
-ROBOFLOW_API_KEY = "vV7dnPsE0Xx1xol0oZjx"
-MODEL_ID = "apple-fruit-ajaxe-a17eg"
-VERSION = "1"
-URL = f"https://detect.roboflow.com/{MODEL_ID}/{VERSION}?api_key={ROBOFLOW_API_KEY}"
+# Параметры калибровки
+KNOWN_DISTANCE = 50.0  # см, расстояние до яблока при калибровке
+KNOWN_WIDTH = 8.0      # см, реальная ширина яблока
 
-# Ouvre la webcam (0 = caméra par défaut)
+# Функция для вычисления фокусного расстояния камеры
+def find_focal_length(known_distance, known_width, width_in_pixels):
+    return (width_in_pixels * known_distance) / known_width
+
+# Функция для вычисления расстояния до объекта
+def distance_to_camera(known_width, focal_length, per_width):
+    return (known_width * focal_length) / per_width
+
+# Загрузите модель YOLOv8 (замените на свой, если есть)
+model = YOLO("yolov8n.pt")
+
+# Сначала нужно вручную измерить ширину яблока в пикселях на фото с известным расстоянием
+# Например, на calibration.jpg яблоко на 50 см, ширина в пикселях = 100 (замените на своё значение)
+width_in_pixels_calibration = 100  # примерное значение, заменить на реальное
+
+# Вычисляем фокусное расстояние
+focal_length_found = find_focal_length(KNOWN_DISTANCE, KNOWN_WIDTH, width_in_pixels_calibration)
+print(f"Фокусное расстояние камеры: {focal_length_found:.2f}")
+
+# Открываем камеру
 cap = cv2.VideoCapture(0)
-
 if not cap.isOpened():
-    print("Erreur : Impossible d'ouvrir la caméra.")
+    print("Ошибка: не удалось открыть камеру")
     exit()
 
-print("Appuyez sur 'q' pour quitter.")
+print("Нажмите 'q' для выхода")
 
 while True:
     ret, frame = cap.read()
     if not ret:
-        print("Erreur de capture vidéo")
+        print("Ошибка захвата кадра")
         break
 
-    # Préparer l'image pour Roboflow
-    _, img_encoded = cv2.imencode(".jpg", frame)
-    files = {"file": img_encoded.tobytes()}
+    # Детекция объектов
+    results = model.predict(frame, conf=0.5)
 
-    try:
-        response = requests.post(URL, files=files, timeout=10)
-        response.raise_for_status()
-        detections = response.json()
-    except Exception as e:
-        print(f"Erreur API Roboflow: {str(e)}")
-        continue
+    for result in results:
+        boxes = result.boxes.xyxy.cpu().numpy()
+        classes = result.boxes.cls.cpu().numpy()
+        for box, cls in zip(boxes, classes):
+            x1, y1, x2, y2 = box.astype(int)
+            class_id = int(cls)
+            class_name = model.model.names[class_id].lower()
 
-    # Dessiner les détections
-    for detection in detections.get("predictions", []):
-        x, y = detection["x"], detection["y"]
-        w, h = detection["width"], detection["height"]
-        x1, y1 = int(x - w/2), int(y - h/2)
-        x2, y2 = int(x + w/2), int(y + h/2)
-        x1, y1 = max(0, x1), max(0, y1)
-        x2, y2 = min(frame.shape[1], x2), min(frame.shape[0], y2)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        cv2.putText(frame, f"{detection['class']} {detection['confidence']:.2f}",
-                    (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (36, 255, 12), 2)
+            # Интересуемся только яблоками
+            if class_name == "apple":
+                # Ширина объекта в пикселях
+                obj_width = x2 - x1
 
-    # Afficher le résultat
-    cv2.imshow("Détection de pommes (Roboflow)", frame)
+                # Вычисляем расстояние
+                distance = distance_to_camera(KNOWN_WIDTH, focal_length_found, obj_width)
 
-    # Quitter avec 'q'
+                # Рисуем прямоугольник и выводим расстояние
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(frame, f"{class_name} {distance:.2f} cm", (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+    cv2.imshow("Детекция и расстояние до яблока", frame)
+
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 

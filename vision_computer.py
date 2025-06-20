@@ -5,7 +5,7 @@ from ultralytics import YOLO
 model = YOLO("yolov8n.pt")  # ou ton propre modèle si tu as entraîné sur "apple" et "person"
 
 # Ouvre la webcam
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 
 if not cap.isOpened():
     print("Erreur : Impossible d'ouvrir la caméra.")
